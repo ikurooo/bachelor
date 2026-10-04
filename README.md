@@ -49,14 +49,74 @@ kubectl: Client Version: v1.36.5+k3s1
 Kustomize Version: v5.8.1
 Server Version: v1.36.5+k3s1
 
-go version go1.27.1 linux/amd64
+go version go 1.27.1 linux/amd64
 tinygo version 0.42.0 linux/amd64 (using go version go1.27.1 and LLVM version 22.1.4)
 wasm-tools 1.260.0
 wasmtime 49.0.0 (17830bd3c 2026-09-21)
 containerd github.com/containerd/containerd/v2 2.2.1
 -rwxr-xr-x 1 user user 45M Sep 27 20:29 /usr/local/bin/containerd-shim-wasmtime-v1
 
+# 0. (Crucial for WSL) Ensure time is synced and restart WSL if needed (--shutdown from Windows)
+sudo timedatectl set-ntp true
+sudo systemctl restart systemd-timesyncd
+timedatectl
+
+# Docker
+sudo apt install -y docker.io
+sudo usermod -aG docker $USER
+sudo service docker start
+
+# Rust
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+source "$HOME/.cargo/env"
+
+# Build dependencies
+sudo apt update
+sudo apt install -y build-essential protobuf-compiler libseccomp-dev
+
+# Build Wasmtime shim
 git clone https://github.com/containerd/runwasi.git
-cd runwasi
+cd ~/runwasi
 make build-wasmtime
-sudo make install
+
+# Install the built shim
+sudo install -m 0755 \
+target/x86_64-unknown-linux-gnu/debug/containerd-shim-wasmtime-v1 \
+/usr/local/bin/containerd-shim-wasmtime-v1
+
+# Verify
+ls -lh /usr/local/bin/containerd-shim-wasmtime-v1
+command -v containerd-shim-wasmtime-v1
+
+# Install K3s
+curl -sfL https://get.k3s.io | sh -
+
+# Install Go
+## 1. Download the latest Go tarball (adjust version if needed)
+curl -LO https://go.dev/dl/go1.27.1.linux-amd64.tar.gz
+
+## 2. Extract it to /usr/local (removes any previous installation first)
+sudo rm -rf /usr/local/go
+sudo tar -C /usr/local -xzf go1.27.1.linux-amd64.tar.gz
+
+## 3. Add Go to your PATH (add this to ~/.bashrc or ~/.profile if you haven't already)
+export PATH=$PATH:/usr/local/go/bin
+
+## 4. Verify the installation
+go version
+
+cd /path/to/your/go-project
+
+# Add componentize-go as a tool dependency to your module
+go get -tool github.com/bytecodealliance/componentize-go@latest
+go mod tidy
+
+# Build the WebAssembly component
+go tool componentize-go build -o app.wasm
+docker build -t wasm-serverless:latest .
+docker save wasm-serverless:latest -o /tmp/wasm-serverless.tar
+sudo k3s ctr images import /tmp/wasm-serverless.tar
+kubectl apply -f app.yaml
+kubectl get pods -o wide
+curl http://:8080
+

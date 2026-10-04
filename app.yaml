@@ -6,5 +6,5 @@ spec:
   runtimeClassName: wasmtime
   containers:
     - name: app
-      image: app-wasm:latest
+      image: wasm-serverless:latest
       imagePullPolicy: Never
