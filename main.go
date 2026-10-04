@@ -1,17 +1,15 @@
 package main
 
 import (
+	"log"
 	"net/http"
-
-	"go.bytecodealliance.org/pkg/wasihttp"
 )
 
-func init() {
-	wasihttp.HandleFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "text/plain")
-		w.WriteHeader(http.StatusOK)
-		w.Write([]byte("Hello from my WASI HTTP function!\n"))
-	})
-}
+func main() {
+	http.HandleFunc("/", HandleHttp)
 
-func main() {}
+	log.Println("Starting standard server on :8080...")
+	if err := http.ListenAndServe(":8080", nil); err != nil {
+		log.Fatal(err)
+	}
+}

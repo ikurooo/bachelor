@@ -1,26 +1,19 @@
 package main
 
-type Request struct {
-	Method string
-	Path   string
-	Body   []byte
-}
+import (
+	"net/http"
+)
 
-type Response struct {
-	Status int
-	Body   []byte
-}
+// HandleHttp is your shared business logic
+func HandleHttp(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "text/plain")
 
-func Handle(request Request) Response {
-	if request.Method == "GET" && request.Path == "/hello" {
-		return Response{
-			Status: 200,
-			Body:   []byte("Hello from my Wasm function!\n"),
-		}
+	if r.Method == "GET" && r.URL.Path == "/hello" {
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte("Hello from shared function!\n"))
+		return
 	}
 
-	return Response{
-		Status: 404,
-		Body:   []byte("Not found\n"),
-	}
+	w.WriteHeader(http.StatusNotFound)
+	w.Write([]byte("Not found\n"))
 }
