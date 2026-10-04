@@ -1,4 +1,4 @@
-package function
+package main
 
 type Request struct {
 	Method string
