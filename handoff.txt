@@ -1,0 +1,260 @@
+Handoff — WASM Serverless Bachelor Project / WSL2 + K3s + Wasmtime
+Project
+
+Working directory:
+
+~/Bachelor/wasm-serverless
+
+Goal: run a WebAssembly application (app.wasm) as a Kubernetes workload under K3s, using containerd + Runwasi's Wasmtime shim and Kubernetes RuntimeClass: wasmtime.
+
+The setup is on Windows + WSL2.
+Current working environment
+
+The project is currently working on the existing WSL distro.
+
+K3s is installed and running.
+
+Kubernetes:
+
+K3s version: v1.36.5+k3s1
+
+Node:
+
+desktop-jhrc3d7
+
+The node is a K3s control-plane node and was Ready.
+Wasmtime/containerd setup
+
+The important part of the project is the Wasmtime containerd shim.
+
+We built the shim from the Runwasi GitHub repository, rather than downloading a prebuilt shim.
+
+Repository:
+
+https://github.com/containerd/runwasi
+
+The intended source-build process was:
+
+git clone https://github.com/containerd/runwasi.git
+cd runwasi
+make build-wasmtime
+sudo make install
+
+The resulting shim was installed as:
+
+/usr/local/bin/containerd-shim-wasmtime-v1
+
+Verified with:
+
+ls -l /usr/local/bin/containerd-shim-wasmtime-v1
+
+It existed as an executable owned by the user:
+
+-rwxr-xr-x 1 user user 46990376 Sep 27 20:29 /usr/local/bin/containerd-shim-wasmtime-v1
+
+We did not modify .bashrc or manually add a PATH entry for the shim.
+
+The important thing is that the executable is installed at:
+
+/usr/local/bin/containerd-shim-wasmtime-v1
+
+K3s/containerd Wasmtime configuration
+
+K3s's generated containerd configuration contained:
+
+[plugins.'io.containerd.cri.v1.runtime'.containerd.runtimes.'wasmtime']
+  runtime_type = "io.containerd.wasmtime.v1"
+
+[plugins.'io.containerd.cri.v1.runtime'.containerd.runtimes.'wasmtime'.options]
+  BinaryName = "/usr/local/bin/containerd-shim-wasmtime-v1"
+
+Verified using:
+
+sudo grep -i wasmtime /var/lib/rancher/k3s/agent/etc/containerd/config.toml
+
+The configuration connects Kubernetes' RuntimeClass to the Wasmtime shim.
+
+Conceptually:
+
+Kubernetes Pod
+      |
+      | runtimeClassName: wasmtime
+      v
+RuntimeClass
+      |
+      | handler: wasmtime
+      v
+containerd
+      |
+      | io.containerd.wasmtime.v1
+      v
+/usr/local/bin/containerd-shim-wasmtime-v1
+      |
+      v
+Wasmtime
+      |
+      v
+app.wasm
+
+RuntimeClass
+
+K3s provided/created the Wasmtime RuntimeClass.
+
+Verified:
+
+sudo kubectl get runtimeclass
+
+Output included:
+
+wasmtime
+
+And:
+
+sudo kubectl get runtimeclass wasmtime -o yaml
+
+contained:
+
+apiVersion: node.k8s.io/v1
+handler: wasmtime
+kind: RuntimeClass
+metadata:
+  name: wasmtime
+
+WASM application
+
+The application is:
+
+~/Bachelor/wasm-serverless/app.wasm
+
+Verified:
+
+file app.wasm
+
+Output:
+
+app.wasm: WebAssembly (wasm) binary module version 0x1000d
+
+The module validates successfully:
+
+wasm-tools validate app.wasm
+
+We also inspected it:
+
+wasm-tools print app.wasm | head -30
+
+It is a WebAssembly Component, using WASI interfaces including:
+
+wasi:io/poll@0.2.12
+wasi:clocks/monotonic-clock@0.2.12
+
+WASM container image
+
+The WASM app was packaged as:
+
+app-wasm:latest
+
+The image was available directly to K3s/containerd, with the Kubernetes manifest using:
+
+image: app-wasm:latest
+imagePullPolicy: Never
+
+Docker inspection showed:
+
+docker inspect app-wasm:latest --format '{{.Config.Entrypoint}} {{.Config.Cmd}}'
+
+which returned:
+
+[] []
+
+Initially this caused:
+
+CreateContainerError
+
+with:
+
+failed to generate spec: no command specified
+
+The solution was to specify the WASM application's command/entrypoint appropriately in the Kubernetes configuration.
+
+After fixing that, the Pod successfully ran.
+Working Kubernetes Pod
+
+The Pod is:
+
+wasm-app
+
+The important part of its YAML is:
+
+spec:
+  runtimeClassName: wasmtime
+  containers:
+    - name: app
+      image: app-wasm:latest
+      imagePullPolicy: Never
+
+The Pod ultimately reached:
+
+1/1     Running
+
+Verified with:
+
+sudo kubectl get pod wasm-app -w
+
+We got:
+
+NAME       READY   STATUS    RESTARTS   AGE
+wasm-app   1/1     Running   0          4s
+
+Logs:
+
+sudo kubectl logs wasm-app
+
+returned no output, which is expected for the current application.
+
+We verified the runtime:
+
+sudo kubectl get pod wasm-app -o yaml | grep -A5 -B5 runtimeClassName
+
+and got:
+
+runtimeClassName: wasmtime
+
+Curling the application
+
+The application was successfully reachable with curl.
+
+This has already been tested successfully.
+
+If needed, inspect the Pod/service configuration first:
+
+sudo kubectl get pod wasm-app -o wide
+sudo kubectl get svc
+
+Important cleanup/reinstallation history
+
+The old K3s installation was previously removed while troubleshooting.
+
+The old installation had:
+
+/etc/rancher/k3s
+/var/lib/rancher/k3s
+/usr/local/bin/k3s
+
+removed.
+
+The K3s systemd service was also removed.
+
+There were initially stale Wasmtime shim processes associated with the old K3s containerd socket:
+
+/run/k3s/containerd/containerd.sock
+
+Those were eventually killed.
+
+Docker's own Wasmtime containers were separate and used:
+
+namespace moby
+/run/containerd/containerd.sock
+
+Those should not be confused with K3s's containerd.
+
+The current working environment is clean enough that we now want to test the installation from scratch on another WSL distro.
