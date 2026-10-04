@@ -1,0 +1,9 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: native-app
+spec:
+  containers:
+    - name: app
+      image: native-app:latest
+      imagePullPolicy: Never
