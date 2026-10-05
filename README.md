@@ -120,3 +120,12 @@ kubectl apply -f app.yaml
 kubectl get pods -o wide
 curl http://:8080
 
+kubectl apply -f app-native.yaml
+kubectl apply -f app-wasm.yaml 
+kubectl apply -f service.yaml
+kubectl get pods -o wide
+kubectl apply -f ingress.yaml
+kubectl get pods -o wide
+kubectl port-forward -n kube-system svc/traefik 8080:80
+curl -H "Host: benchmark.local" http://localhost:8080/hello
+
