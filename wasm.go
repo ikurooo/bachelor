@@ -3,16 +3,28 @@
 package main
 
 import (
+	"fmt"
 	"net/http"
 
 	"go.bytecodealliance.org/pkg/wasihttp"
 )
 
-func init() {
-	wasihttp.HandleFunc(func(w http.ResponseWriter, r *http.Request) {
-		r.Header.Set("X-Execution-Env", "wasm")
-		HandleHttp(w, r)
-	})
+func main() {
+	wasihttp.Handle(http.HandlerFunc(HandleHttp))
+}
+
+func HandleHttp(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "text/plain")
+	w.Header().Set("X-Execution-Env", "wasm")
+
+	if r.Method == "GET" && r.URL.Path == "/hello" {
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(fmt.Sprintf("Hello from %s function!\n", r.Header.Get("X-Execution-Env"))))
+		return
+	}
+
+	w.WriteHeader(http.StatusNotFound)
+	w.Write([]byte("Not found\n"))
 }
 
 // Compile the WebAssembly component using componentize-go
@@ -25,4 +37,3 @@ func init() {
 // docker save wasm-serverless:latest -o /tmp/wasm-serverless.tar
 
 // sudo k3s ctr images import /tmp/wasm-serverless.tar
-func main() {}
