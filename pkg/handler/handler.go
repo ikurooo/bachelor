@@ -1,11 +1,10 @@
-package main
+package handler
 
 import (
 	"fmt"
 	"net/http"
 )
 
-// HandleHttp is your shared business logic
 func HandleHttp(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/plain")
 
