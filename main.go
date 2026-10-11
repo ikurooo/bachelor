@@ -10,7 +10,8 @@ import (
 
 func init() {
 	wasihttp.HandleFunc(func(w http.ResponseWriter, r *http.Request) {
-		r.Header.Set("X-Execution-Env", "wasm")
+		const machine string = "wasm-serverless"
+		r.Header.Set("X-Execution-Env", machine)
 		handler.HandleHttp(w, r)
 	})
 }
