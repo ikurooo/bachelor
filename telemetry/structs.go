@@ -1,60 +1,28 @@
 package main
 
-type MachineInfo struct {
-	PodInfo     []PodInfo
-	RuntimeInfo []RuntimeInfo
+type Node struct {
+	name     string
+	runtimes []string
 }
 
-// --- Pod Structs ---
-
-type PodInfo struct {
-	Name         string
-	IP           string
-	Node         string
-	RuntimeClass string
-	CPU          string
-	Memory       string
+type NodeInfo struct {
+	Items []NodeItems `json:"items"`
 }
 
-type Pods struct {
-	Items []PodItem `json:"items"`
+type NodeItems struct {
+	Metadata   NodeMetadata `json:"metadata"`
+	NodeStatus NodeStatus   `json:"status"`
 }
 
-type PodItem struct {
-	Metadata PodMetadata `json:"metadata"`
-	Spec     PodSpec     `json:"spec"`
-	Status   PodStatus   `json:"status"`
-}
-
-type PodMetadata struct {
+type NodeMetadata struct {
 	Name string `json:"name"`
 }
 
-type PodSpec struct {
-	NodeName         string `json:"nodeName"`
-	RuntimeClassName string `json:"runtimeClassName"`
+type NodeStatus struct {
+	NodeRuntimeHandlers []NodeRuntimeHandlers `json:"runtimeHandlers"`
 }
 
-type PodStatus struct {
-	PodIP string `json:"podIP"`
-	Phase string `json:"phase"`
-}
-
-// --- Runtime Structs ---
-
-type RuntimeInfo struct {
-	Name string
-}
-
-type Runtimes struct {
-	Items []RuntimeItem `json:"items"`
-}
-
-type RuntimeItem struct {
-	Metadata RuntimeMetadata `json:"metadata"`
-}
-
-type RuntimeMetadata struct {
+type NodeRuntimeHandlers struct {
 	Name string `json:"name"`
 }
 

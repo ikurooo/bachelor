@@ -2,24 +2,20 @@ package main
 
 import "sync/atomic"
 
-type Cache struct {
+type CacheStore struct {
 	store atomic.Value
 }
 
-func (c *Cache) Get() map[string]MachineInfo {
-	val := c.store.Load()
-	if val == nil {
-		return nil
-	}
-
-	m, ok := val.(map[string]MachineInfo)
-	if !ok {
-		return nil
-	}
-
-	return m
+func NewCacheStore() *CacheStore {
+	c := &CacheStore{}
+	c.store.Store(make(map[string][]Node))
+	return c
 }
 
-func (c *Cache) Update(newData map[string]MachineInfo) {
-	c.store.Store(newData)
+func (c *CacheStore) Update(machines []Node) {
+	newMap := make(map[string][]Node)
+	//for _, m := range machines {
+	//	newMap[m.RuntimeInfo] = append(newMap[m], m)
+	//}
+	c.store.Store(newMap)
 }
