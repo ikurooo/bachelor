@@ -1,8 +1,21 @@
 package main
 
+type Topology struct {
+	Nodes           map[string]Node
+	WarmPods        map[string][]ActivePod
+	CompatibleNodes map[string][]string
+}
+
 type Node struct {
-	name     string
-	runtimes []string
+	Name     string      `json:"name"`
+	Runtimes []string    `json:"runtimes"`
+	Pods     []ActivePod `json:"pods"`
+}
+
+type ActivePod struct {
+	Name    string `json:"name"`
+	IP      string `json:"ip"`
+	Runtime string `json:"runtime"`
 }
 
 type NodeInfo struct {
@@ -26,18 +39,33 @@ type NodeRuntimeHandlers struct {
 	Name string `json:"name"`
 }
 
-// --- Prometheus Structs ---
-
-type PrometheusResponse struct {
-	Status string         `json:"status"`
-	Data   PrometheusData `json:"data"`
+type PodInfo struct {
+	Items []PodItems `json:"items"`
 }
 
-type PrometheusData struct {
-	Result []PrometheusResult `json:"result"`
+type PodItems struct {
+	Metadata PodMetadata `json:"metadata"`
+	Spec     PodSpec     `json:"spec"`
+	Status   PodStatus   `json:"status"`
 }
 
-type PrometheusResult struct {
-	Metric map[string]string `json:"metric"`
-	Value  []any             `json:"value"`
+type PodMetadata struct {
+	Name      string `json:"name"`
+	Namespace string `json:"namespace"`
+}
+
+type PodSpec struct {
+	NodeName string `json:"nodeName"`
+	Runtime  string `json:"runtimeClassName"`
+}
+
+type PodStatus struct {
+	Phase      string         `json:"phase"`
+	PodIP      string         `json:"podIP"`
+	Conditions []PodCondition `json:"conditions"`
+}
+
+type PodCondition struct {
+	Type   string `json:"type"`
+	Status string `json:"status"`
 }

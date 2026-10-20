@@ -1,21 +1,28 @@
 package main
 
-import "sync/atomic"
+import (
+	"sync/atomic"
+)
 
+// CacheStore holds thread-safe cluster topology
 type CacheStore struct {
-	store atomic.Value
+	store atomic.Value // Stores Topology
 }
 
 func NewCacheStore() *CacheStore {
 	c := &CacheStore{}
-	c.store.Store(make(map[string][]Node))
+	c.store.Store(Topology{
+		Nodes:           make(map[string]Node),
+		WarmPods:        make(map[string][]ActivePod),
+		CompatibleNodes: make(map[string][]string),
+	})
 	return c
 }
 
-func (c *CacheStore) Update(machines []Node) {
-	newMap := make(map[string][]Node)
-	//for _, m := range machines {
-	//	newMap[m.RuntimeInfo] = append(newMap[m], m)
-	//}
-	c.store.Store(newMap)
+func (c *CacheStore) Get() Topology {
+	return c.store.Load().(Topology)
+}
+
+func (c *CacheStore) Update(newTopo Topology) {
+	c.store.Store(newTopo)
 }

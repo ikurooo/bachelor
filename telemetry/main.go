@@ -9,88 +9,151 @@ import (
 	"io"
 	"log"
 	"net/http"
-	"net/url"
 	"time"
 )
 
 func main() {
 	k8sURL := flag.String("k8s", "http://localhost:8001", "Kubernetes API endpoint")
-	promURL := flag.String("prom", "http://localhost:9090", "Prometheus API endpoint")
-	namespace := flag.String("ns", "default", "Kubernetes namespace")
-	port := flag.String("port", "8081", "Cache server port")
-	flag.Parse()
+	client := &http.Client{Timeout: 0}
+	cache := NewCacheStore()
+	notifier := NewPodNotifier()
+	baseURL := "http://localhost:8001"
 
-	_, _, _ = promURL, namespace, port
+	go func() {
+		ticker := time.NewTicker(5 * time.Second)
+		defer ticker.Stop()
 
-	client := createHTTPClient()
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
+		initialCtx, cancelInitial := context.WithTimeout(context.Background(), 4*time.Second)
+		if err := syncClusterTopology(initialCtx, client, *k8sURL, cache); err != nil {
+			log.Printf("Initial sync failed: %v", err)
+		}
+		cancelInitial()
 
-	info, err := getNodeInfo(ctx, client, *k8sURL)
-	if err != nil {
-		return
+		for range ticker.C {
+			syncCtx, cancelSync := context.WithTimeout(context.Background(), 4*time.Second)
+
+			err := syncClusterTopology(syncCtx, client, *k8sURL, cache)
+			if err != nil {
+				log.Printf("Cluster sync error: %v", err)
+			} else {
+				log.Printf("Cluster topology synced successfully. Cache state: %v", cache.Get())
+			}
+
+			cancelSync()
+		}
+	}()
+
+	go startPodWatcher(context.Background(), client, baseURL, notifier)
+
+	broker := &SmartBroker{
+		cache:    cache,
+		notifier: notifier,
+		client:   client,
+		baseURL:  baseURL,
 	}
 
-	log.Printf("Info: %v", info)
+	log.Printf("Smart Broker proxy listening on http://localhost:8081")
+	if err := http.ListenAndServe(":8081", broker); err != nil {
+		log.Fatalf("Proxy failed: %v", err)
+	}
 }
 
-func getNodeInfo(ctx context.Context, client *http.Client, url string) ([]Node, error) {
-	reqURL := fmt.Sprintf("%s/api/v1/nodes", url)
-
-	body, err := doRequest(ctx, client, reqURL, "")
+// -- maybe a better idea would be to separate the node from the machine itself so we can look up active nodes based on
+// -- runtimes and machines based on runtimes for better performance, then the question becomes, how can I tell a certain
+// -- node to boot up a new instance with a specific runtime and then also return the IP of the given pod that was created
+func syncClusterTopology(ctx context.Context, client *http.Client, baseURL string, cache *CacheStore) error {
+	nodeURL := fmt.Sprintf("%s/api/v1/nodes", baseURL)
+	nodeBody, err := doRequest(ctx, client, nodeURL, "")
 	if err != nil {
-		return nil, err
+		return err
 	}
 
 	var res NodeInfo
+	if err := json.Unmarshal(nodeBody, &res); err != nil {
+		return err
+	}
 
-	err = json.Unmarshal(body, &res)
+	podURL := fmt.Sprintf("%s/api/v1/namespaces/default/pods", baseURL)
+	podBody, err := doRequest(ctx, client, podURL, "")
 	if err != nil {
-		return nil, err
+		return err
 	}
 
-	var nodes []Node
-
-	for _, item := range res.Items {
-		var runtimes []string
-		for _, runtime := range item.NodeStatus.NodeRuntimeHandlers {
-			runtimes = append(runtimes, runtime.Name)
-		}
-
-		node := Node{
-			name:     item.Metadata.Name,
-			runtimes: runtimes,
-		}
-
-		nodes = append(nodes, node)
+	var podInfo PodInfo
+	if err := json.Unmarshal(podBody, &podInfo); err != nil {
+		return err
 	}
 
-	return nodes, nil
+	newTopology := buildTopology(res, podInfo)
+
+	cache.Update(newTopology)
+
+	return nil
 }
 
-func fetchPromMetric(ctx context.Context, client *http.Client, promURL, query string) (map[string]string, error) {
-	metrics := make(map[string]string)
-	reqURL := fmt.Sprintf("%s/api/v1/query?query=%s", promURL, url.QueryEscape(query))
+func buildTopology(rawNodes NodeInfo, rawPods PodInfo) Topology {
+	nodesMap := make(map[string]Node)
+	warmPodsMap := make(map[string][]ActivePod)
+	compatibleNodesMap := make(map[string][]string)
 
-	body, err := doRequest(ctx, client, reqURL, "")
-	if err != nil {
-		return nil, err
-	}
+	for _, item := range rawNodes.Items {
+		nodeName := item.Metadata.Name
+		var runtimes []string
 
-	var res PrometheusResponse
-	if err := json.Unmarshal(body, &res); err != nil {
-		return nil, err
-	}
+		for _, runtime := range item.NodeStatus.NodeRuntimeHandlers {
+			runtimes = append(runtimes, runtime.Name)
+			compatibleNodesMap[runtime.Name] = append(compatibleNodesMap[runtime.Name], nodeName)
+		}
 
-	for _, result := range res.Data.Result {
-		pod := result.Metric["pod"]
-		if len(result.Value) >= 2 {
-			if val, ok := result.Value[1].(string); ok {
-				metrics[pod] = val
-			}
+		nodesMap[nodeName] = Node{
+			Name:     nodeName,
+			Runtimes: runtimes,
+			Pods:     []ActivePod{},
 		}
 	}
-	return metrics, nil
+
+	for _, item := range rawPods.Items {
+		// Filter: Must be Running and have an assigned IP
+		if item.Status.Phase != "Running" || item.Status.PodIP == "" {
+			continue
+		}
+
+		// Filter: Must be fully Ready
+		isReady := false
+		for _, cond := range item.Status.Conditions {
+			if cond.Type == "Ready" && cond.Status == "True" {
+				isReady = true
+				break
+			}
+		}
+		if !isReady {
+			continue
+		}
+
+		runtime := item.Spec.Runtime
+		if runtime == "" {
+			runtime = "runc"
+		}
+
+		activePod := ActivePod{
+			Name:    item.Metadata.Name,
+			IP:      item.Status.PodIP,
+			Runtime: runtime,
+		}
+
+		nodeName := item.Spec.NodeName
+		if node, exists := nodesMap[nodeName]; exists {
+			node.Pods = append(node.Pods, activePod)
+			nodesMap[nodeName] = node
+			warmPodsMap[runtime] = append(warmPodsMap[runtime], activePod)
+		}
+	}
+
+	return Topology{
+		Nodes:           nodesMap,
+		WarmPods:        warmPodsMap,
+		CompatibleNodes: compatibleNodesMap,
+	}
 }
 
 func createHTTPClient() *http.Client {
