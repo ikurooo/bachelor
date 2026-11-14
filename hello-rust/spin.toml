@@ -1,0 +1,20 @@
+#:schema https://schemas.spinframework.dev/spin/manifest-v2/latest.json
+
+spin_manifest_version = 2
+
+[application]
+name = "hello-rust"
+version = "0.1.0"
+authors = ["ivan"]
+description = ""
+
+[[trigger.http]]
+route = "/..."
+component = "hello-rust"
+
+[component.hello-rust]
+source = "target/wasm32-wasip2/release/hello_rust.wasm"
+allowed_outbound_hosts = []
+[component.hello-rust.build]
+command = "cargo build --target wasm32-wasip2 --release"
+watch = ["src/**/*.rs", "Cargo.toml"]

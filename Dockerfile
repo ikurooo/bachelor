@@ -1,3 +1,3 @@
 FROM scratch
-COPY app.wasm /app.wasm
-ENTRYPOINT ["/app.wasm"]
+COPY app.cwasm /app.cwasm
+ENTRYPOINT ["/app.cwasm"]

@@ -1,0 +1,81 @@
+\documentclass[11pt,a4paper]{article}
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[margin=1in]{geometry}
+\usepackage{hyperref}
+\usepackage{enumitem}
+\usepackage{booktabs}
+\usepackage{xcolor}
+\usepackage{listings}
+
+\lstset{
+    basicstyle=\ttfamily\small,
+    backgroundcolor=\color{gray!10},
+    frame=single,
+    breaklines=true,
+    columns=fullflexible
+}
+
+\title{\textbf{Troubleshooting Report: K3s \& SpinKube Startup and Deployment Recovery}}
+\author{Cluster Diagnostics Summary}
+\date{\today}
+
+\begin{document}
+
+    \maketitle
+
+    \section*{Executive Summary}
+    The K3s cluster initially failed on startup because a custom \texttt{config-v3.toml.tmpl} file caused the embedded \texttt{containerd} daemon to crash. Once K3s was restored, SpinKube application pods stalled in \texttt{ContainerCreating} due to a runtime handler mismatch (\texttt{spin-v2} vs.\ \texttt{spin}) and subsequently failed with \texttt{ErrImagePull} because the ephemeral registry (\texttt{ttl.sh}) automatically deleted the stored image replicas after their time-to-live (TTL) expired.
+
+    \section{Environment Versions}\label{sec:environment-versions}
+    \begin{table}[h!]
+        \centering
+        \begin{tabular}{@{}ll@{}}
+            \toprule
+            \textbf{Component} & \textbf{Installed Version / Path} \\ \midrule
+            K3s Server & \texttt{v1.37.2+k3s1} (\texttt{go1.26.10}) \\
+            Embedded Containerd & \texttt{v2.3.7-k3s1} (v3 TOML configuration schema) \\
+            Docker Engine (Host) & \texttt{29.1.3} (unused by K3s) \\
+            Spin Containerd Shim & \texttt{/usr/local/bin/containerd-shim-spin-v2} \\ \bottomrule
+        \end{tabular}\label{tab:table}
+    \end{table}
+
+    \section{Root Causes and Resolution Steps}\label{sec:root-causes-and-resolution-steps}
+
+    \subsection{1. K3s Startup Failure (\texttt{containerd exited: exit status 1})}\label{subsec:1.-k3s-startup-failure-(texttt{containerd-exited:-exit-status-1})}
+    \begin{itemize}[leftmargin=*]
+    \item \textbf{Symptom:} Systemd reported \texttt{Failed with result 'protocol'} while K3s logged repeated connection refused errors dialing \texttt{/run/k3s/containerd/containerd.sock}.
+    \item \textbf{Root Cause:} A manual \texttt{/var/lib/rancher/k3s/agent/etc/containerd/config-v3.toml.tmpl} existed without \texttt{\{\{ template "base" . \}\}}, stripping out core CRI settings. When the base template was added alongside a manual \texttt{runtimes.'spin'} block, \texttt{containerd} failed with \texttt{toml: table spin already exists} because K3s \texttt{v1.37+} automatically detects \texttt{containerd-shim-spin-v2} in \texttt{PATH} and injects the \texttt{spin} runtime itself.
+    \item \textbf{Resolution:} Removed the custom \texttt{config-v3.toml.tmpl} file and restarted K3s so it could auto-generate a clean \texttt{config.toml}:
+    \begin{lstlisting}[language=bash,label={lst:lstlisting}]
+sudo rm -f /var/lib/rancher/k3s/agent/etc/containerd/config-v3.toml.tmpl
+sudo systemctl restart k3s
+    \end{lstlisting}
+    \end{itemize}
+
+    \subsection{2. Pod Sandbox Creation Failure (\texttt{no runtime for "spin-v2" is configured})}\label{subsec:2.-pod-sandbox-creation-failure-(texttt{no-runtime-for-"spin-v2"-is-configured})}
+    \begin{itemize}[leftmargin=*]
+    \item \textbf{Symptom:} Pods remained stuck in \texttt{ContainerCreating} with kubelet events stating \texttt{no runtime for "spin-v2" is configured}.
+    \item \textbf{Root Cause:} K3s natively registers the WebAssembly runtime and Kubernetes \texttt{RuntimeClass} under the name \texttt{spin}, whereas SpinKube's \texttt{SpinAppExecutor} defaulted to \texttt{wasmtime-spin-v2} (which targets handler \texttt{spin-v2}).
+    \item \textbf{Resolution:} Patched the \texttt{SpinAppExecutor} to use K3s's built-in \texttt{spin} runtime class and deleted stale ReplicaSets:
+    \begin{lstlisting}[language=bash,label={lst:lstlisting2}]
+kubectl patch spinappexecutor containerd-shim-spin -n default \
+  --type='merge' -p '{"spec":{"deploymentConfig":{"runtimeClassName":"spin"}}}'
+kubectl delete rs hello-spin-549bc64f6c hello-spin-7dc48f5c48
+    \end{lstlisting}
+    \end{itemize}
+
+    \subsection{3. Image Pull Failure (\texttt{ErrImagePull} / \texttt{not found})}\label{subsec:3.-image-pull-failure-(texttt{errimagepull}-/-texttt{not-found})}
+    \begin{itemize}[leftmargin=*]
+    \item \textbf{Symptom:} After passing sandbox creation, the new pod failed to pull \texttt{ttl.sh/hello-spin:v1} with a \texttt{404 Not Found} error.
+    \item \textbf{Root Cause:} The issue was unrelated to rebooting the local PC. \texttt{ttl.sh} is a public, ephemeral container registry that automatically deletes uploaded images and replicas once their time-to-live (TTL) expires (maximum 24 hours). Because the image was over two days old, \texttt{ttl.sh} had already purged it.
+    \item \textbf{Resolution:} Built and pushed a fresh image with an explicit 24-hour TTL tag and updated the \texttt{SpinApp} manifest:
+    \begin{lstlisting}[language=bash,label={lst:lstlisting3}]
+spin build
+spin registry push ttl.sh/hello-spin:24h
+kubectl patch spinapp hello-spin -n default \
+  --type='merge' -p '{"spec":{"image":"ttl.sh/hello-spin:24h"}}'
+    \end{lstlisting}
+    \end{itemize}
+
+\end{document}
