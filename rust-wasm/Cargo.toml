@@ -1,5 +1,5 @@
 [package]
-name = "hello-rust"
+name = "rust-wasm"
 authors = ["ivan"]
 description = ""
 version = "0.1.0"

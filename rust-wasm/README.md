@@ -61,15 +61,15 @@ $ rustup target add wasm32-wasip2
 
 First, run the `spin new` command to create a Spin application from a template.
 ```bash
-# Create a new Spin application named 'hello-rust' based on the Rust http template, accepting all defaults
-$ spin new --accept-defaults -t http-rust hello-rust
+# Create a new Spin application named 'rust-wasm' based on the Rust http template, accepting all defaults
+$ spin new --accept-defaults -t http-rust rust-wasm
 ```
-Running the `spin new` command created a `hello-rust` directory with all the necessary files for your application. Change to the `hello-rust` directory and build the application with `spin build`, then run it locally with `spin up`:
+Running the `spin new` command created a `rust-wasm` directory with all the necessary files for your application. Change to the `rust-wasm` directory and build the application with `spin build`, then run it locally with `spin up`:
 
 ```bash
 # Compile to Wasm by executing the `build` command.
 $ spin build
-Executing the build command for component hello-rust: cargo build --target wasm32-wasip2 --release
+Executing the build command for component rust-wasm: cargo build --target wasm32-wasip2 --release
     Finished release [optimized] target(s) in 0.03s
 Successfully ran the build command for the Spin components.
 
@@ -79,7 +79,7 @@ Logging component stdio to ".spin/logs/"
 
 Serving http://127.0.0.1:3000
 Available Routes:
-  hello-rust: http://127.0.0.1:3000 (wildcard)
+  rust-wasm: http://127.0.0.1:3000 (wildcard)
 ```
 
 That's it! Now that the application is running, use your browser or cURL in another shell to try it out:
@@ -95,7 +95,7 @@ date: Sun, 02 Mar 2025 20:09:11 GMT
 Hello World!
 ```
 
-You can make the app do more by editting the `src/lib.rs` file in the `hello-rust` directory using your favorite editor or IDE. To learn more about writing Spin applications see [Writing Applications](https://spinframework.dev/writing-apps) in the Spin documentation.  To learn how to publish and distribute your application see the [Publishing and Distribution](https://spinframework.dev/distributing-apps) guide in the Spin documentation.
+You can make the app do more by editting the `src/lib.rs` file in the `rust-wasm` directory using your favorite editor or IDE. To learn more about writing Spin applications see [Writing Applications](https://spinframework.dev/writing-apps) in the Spin documentation.  To learn how to publish and distribute your application see the [Publishing and Distribution](https://spinframework.dev/distributing-apps) guide in the Spin documentation.
 
 ## Language Support for Spin Features
 

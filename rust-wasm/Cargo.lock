@@ -305,14 +305,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2304e00983f87ffb38b55b444b5e3b60a884b5d30c0fca7d82fe33449bbe55ea"
 
 [[package]]
-name = "hello-rust"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "spin-sdk",
-]
-
-[[package]]
 name = "hmac"
 version = "0.13.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -560,6 +552,14 @@ name = "rand_core"
 version = "0.10.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "63b8176103e19a2643978565ca18b50549f6101881c443590420e4dc998a3c69"
+
+[[package]]
+name = "rust-wasm"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "spin-sdk",
+]
 
 [[package]]
 name = "rust_decimal"

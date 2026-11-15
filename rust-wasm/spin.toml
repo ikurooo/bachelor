@@ -3,18 +3,18 @@
 spin_manifest_version = 2
 
 [application]
-name = "hello-rust"
+name = "rust-wasm"
 version = "0.1.0"
 authors = ["ivan"]
 description = ""
 
 [[trigger.http]]
 route = "/..."
-component = "hello-rust"
+component = "rust-wasm"
 
-[component.hello-rust]
-source = "target/wasm32-wasip2/release/hello_rust.wasm"
+[component.rust-wasm]
+source = "target/wasm32-wasip2/release/rust-wasm.wasm"
 allowed_outbound_hosts = []
-[component.hello-rust.build]
+[component.rust-wasm.build]
 command = "cargo build --target wasm32-wasip2 --release"
 watch = ["src/**/*.rs", "Cargo.toml"]
