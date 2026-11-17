@@ -12,8 +12,11 @@ type CacheStore struct {
 func NewCacheStore() *CacheStore {
 	c := &CacheStore{}
 	c.store.Store(Topology{
-		Nodes:           make(map[string]Node),
-		WarmPods:        make(map[string][]ActivePod),
+		// maps the node name to (node name, available runtimes, active pods)
+		Nodes: make(map[string]Node),
+		// maps the runtime names to (pod name, pod ip, runtime)
+		WarmPods: make(map[string][]ActivePod),
+		// maps the runtime names to node names
 		CompatibleNodes: make(map[string][]string),
 	})
 	return c

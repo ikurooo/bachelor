@@ -22,18 +22,27 @@ type SmartBroker struct {
 	baseURL  string
 }
 
+func runtimeConfig(runtime string) (image string, port int) {
+	if runtime == "runc" {
+		return "docker.io/library/rust-native:latest", 3000
+	}
+	return "ttl.sh/hello-spin:24h", 80
+}
+
 func (b *SmartBroker) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	topo := b.cache.Get()
 
 	const payloadThreshold = 500 * 1024
-	desiredRuntime := "wasmtime"
+	desiredRuntime := "spin"
 
 	if r.ContentLength > payloadThreshold || r.URL.Query().Get("heavy") == "true" {
 		desiredRuntime = "runc"
 		log.Printf("Payload size (%d bytes) exceeds threshold. Routing to Docker (runc)", r.ContentLength)
 	} else {
-		log.Printf("Payload size (%d bytes) is lightweight. Routing to Wasm (wasmtime)", r.ContentLength)
+		log.Printf("Payload size (%d bytes) is lightweight. Routing to Spin Wasm (spin)", r.ContentLength)
 	}
+
+	_, targetPort := runtimeConfig(desiredRuntime)
 
 	var targetPod *ActivePod
 	if warmPods, exists := topo.WarmPods[desiredRuntime]; exists && len(warmPods) > 0 {
@@ -76,7 +85,7 @@ func (b *SmartBroker) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			log.Printf("Received instant pod IP via Watch stream: [%s]", podIP)
 		}
 
-		targetStr := fmt.Sprintf("http://%s:8080", podIP)
+		targetStr := fmt.Sprintf("http://%s:%d", podIP, targetPort)
 		targetURL, err := url.Parse(targetStr)
 		if err != nil {
 			http.Error(w, "Internal proxy error parsing target IP", http.StatusInternalServerError)
@@ -99,7 +108,7 @@ func (b *SmartBroker) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	targetStr := fmt.Sprintf("http://%s:8080", targetPod.IP)
+	targetStr := fmt.Sprintf("http://%s:%d", targetPod.IP, targetPort)
 	targetURL, err := url.Parse(targetStr)
 	if err != nil {
 		http.Error(w, "Internal proxy error parsing target IP", http.StatusInternalServerError)
@@ -120,34 +129,39 @@ func (b *SmartBroker) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 func triggerColdStart(client *http.Client, baseURL, namespace, nodeName, runtime string) (string, error) {
 	podName := fmt.Sprintf("cold-%s-%d", runtime, time.Now().UnixNano())
+	image, containerPort := runtimeConfig(runtime)
 
-	image := "wasm-serverless:latest"
-	if runtime == "runc" {
-		image = "native-app:latest" // Matches your native container manifest image name!
+	containerSpec := map[string]any{
+		"name":            "app",
+		"image":           image,
+		"imagePullPolicy": "IfNotPresent",
+		"ports": []map[string]any{
+			{"containerPort": containerPort},
+		},
+		"readinessProbe": map[string]any{
+			"httpGet": map[string]any{
+				"path": "/",
+				"port": containerPort,
+			},
+			"initialDelaySeconds": 0,
+			"periodSeconds":       1,
+			"successThreshold":    1,
+		},
+	}
+
+	if runtime != "runc" {
+		containerSpec["command"] = []string{"/"}
+		containerSpec["env"] = []map[string]string{
+			{
+				"name":  "SPIN_HTTP_LISTEN_ADDR",
+				"value": fmt.Sprintf("0.0.0.0:%d", containerPort),
+			},
+		}
 	}
 
 	podSpec := map[string]any{
-		"nodeName": nodeName,
-		"containers": []map[string]any{
-			{
-				"name":            "app",
-				"image":           image,
-				"imagePullPolicy": "Never",
-				"ports": []map[string]any{
-					{"containerPort": 8080},
-				},
-
-				"readinessProbe": map[string]any{
-					"httpGet": map[string]any{
-						"path": "/hello",
-						"port": 8080,
-					},
-					"initialDelaySeconds": 0,
-					"periodSeconds":       1,
-					"successThreshold":    1,
-				},
-			},
-		},
+		"nodeName":   nodeName,
+		"containers": []map[string]any{containerSpec},
 	}
 
 	if runtime != "runc" {

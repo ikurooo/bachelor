@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"crypto/tls"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -36,7 +35,7 @@ func main() {
 			if err != nil {
 				log.Printf("Cluster sync error: %v", err)
 			} else {
-				log.Printf("Cluster topology synced successfully. Cache state: %v", cache.Get())
+				logCacheContents(cache)
 			}
 
 			cancelSync()
@@ -55,6 +54,42 @@ func main() {
 	log.Printf("Smart Broker proxy listening on http://localhost:8081")
 	if err := http.ListenAndServe(":8081", broker); err != nil {
 		log.Fatalf("Proxy failed: %v", err)
+	}
+}
+
+func logCacheContents(cache *CacheStore) {
+	topo := cache.Get()
+
+	log.Printf("=== Cluster Topology Cache ===")
+
+	if len(topo.Nodes) == 0 {
+		log.Println("Nodes: none discovered")
+	} else {
+		for nodeName, nodeInfo := range topo.Nodes {
+			log.Printf("Node [%s]: %+v", nodeName, nodeInfo)
+		}
+	}
+
+	if len(topo.CompatibleNodes) == 0 {
+		log.Println("Compatible nodes: none")
+	} else {
+		for runtime, nodes := range topo.CompatibleNodes {
+			if runtime == "" {
+				continue
+			}
+			log.Printf("Compatible nodes for [%s] (%d): %v", runtime, len(nodes), nodes)
+		}
+	}
+
+	if len(topo.WarmPods) == 0 {
+		log.Println("Warm pods: none")
+	} else {
+		for runtime, pods := range topo.WarmPods {
+			if runtime == "" {
+				continue
+			}
+			log.Printf("Warm pods for [%s] (%d): %+v", runtime, len(pods), pods)
+		}
 	}
 }
 
@@ -154,13 +189,6 @@ func buildTopology(rawNodes NodeInfo, rawPods PodInfo) Topology {
 		WarmPods:        warmPodsMap,
 		CompatibleNodes: compatibleNodesMap,
 	}
-}
-
-func createHTTPClient() *http.Client {
-	tr := &http.Transport{
-		TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
-	}
-	return &http.Client{Timeout: 3 * time.Second, Transport: tr}
 }
 
 func doRequest(ctx context.Context, client *http.Client, reqURL, token string) ([]byte, error) {
